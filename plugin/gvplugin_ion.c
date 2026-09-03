@@ -11,7 +11,8 @@
 #include <graphviz/gvplugin_layout.h>
 #include <graphviz/types.h>
 
-#include <stdlib.h>\n#include <stdio.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "ion_layout.h"
