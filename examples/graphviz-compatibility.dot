@@ -1,0 +1,29 @@
+digraph {
+  graph [label="Ion layout with Graphviz constraints", labelloc=t, compound=true];
+  node [shape=box, fontname="monospace", style=filled, fillcolor="#f2f6fc"];
+  edge [fontname="sans-serif", fontsize=11];
+  subgraph cluster_function {
+    label="Function";
+    entry [label="entry"];
+    header [label="loop header"];
+    subgraph cluster_body {
+      label="Loop body";
+      left [label="left branch"];
+      right [label="right branch"];
+      merge [label="merge"];
+      {rank=same; left; right;}
+    }
+    exit [label="exit"];
+  }
+  result [shape=record, label="<value> value|<status> status", fillcolor="#eef8ec"];
+  entry -> header;
+  header -> left [label="true"];
+  header -> right [label="false"];
+  left -> merge;
+  right -> merge;
+  merge -> header [label="continue"];
+  header -> exit [minlen=3, label="done"];
+  merge -> exit [constraint=false, style=dashed, label="break"];
+  exit -> result:value:n [ltail=cluster_function, label="return"];
+  exit -> result:status:w [label="status"];
+}

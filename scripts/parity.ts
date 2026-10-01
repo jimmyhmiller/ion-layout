@@ -17,13 +17,21 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { layoutGraph, DEFAULT_CONFIG, type InputNode } from "/Users/jimmyhmiller/Documents/Code/open-source/iongraph/generic-layout/layout.js";
+// Structural input type avoids a machine-specific static import. The actual
+// reference algorithm is loaded from the checkout supplied by IONGRAPH.
+interface InputNode {
+  id: number; size: {x: number; y: number}; predecessors: number[];
+  successors: number[]; loopDepth: number; isLoopHeader: boolean; isBackedge: boolean;
+}
 
+async function main() {
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ION_DUMP = join(ROOT, "target", "release", "ion-dump");
-const IONGRAPH = "/Users/jimmyhmiller/Documents/Code/open-source/iongraph";
+const IONGRAPH = process.env.IONGRAPH;
+if (!IONGRAPH) throw new Error("Set IONGRAPH to an upstream iongraph checkout");
+const { layoutGraph, DEFAULT_CONFIG } = await import(pathToFileURL(join(IONGRAPH, "generic-layout/layout.ts")).href);
 
 interface Case {
   name: string;
@@ -131,7 +139,7 @@ cases.push({
 // mega-complex.json: a real 9.7MB SpiderMonkey ion dump — every pass of
 // every function becomes a parity case (~526 real compiler graphs).
 {
-  const MEGA = "/Users/jimmyhmiller/Documents/Code/PlayGround/claude-experiments/iongraph-rust/mega-complex.json";
+  const MEGA = process.env.IONGRAPH_MEGA ?? join(IONGRAPH, "mega-complex.json");
   try {
     const g = JSON.parse(readFileSync(MEGA, "utf8"));
     for (const [fi, fn] of (g.functions ?? []).entries()) {
@@ -289,3 +297,6 @@ for (const c of cases) {
 
 console.log(`\n${pass} exact, ${deviations} expected deviations, ${tsErrors} original-side errors, ${fail} FAILURES out of ${cases.length} cases`);
 process.exit(fail > 0 ? 1 : 0);
+
+}
+main().catch(error => { console.error(error); process.exitCode = 1; });

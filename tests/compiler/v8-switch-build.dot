@@ -1,0 +1,33 @@
+digraph G {
+graph [rankdir=TB];
+node [shape=box, fontname="Menlo", fontsize=11];
+label="compilerSwitch — V8.TFTurboshaftBuildGraph";
+B0 [label="B0 [MERGE]\l0: Parameter\l1: Parameter\l3: Parameter\l4: Constant\l5: Constant\l6: FrameState\l8: JSStackCheck\l9: Constant\l10: Goto\l"];
+B1 [label="B1 [LOOP]\l11: Phi\l12: Phi\l13: FrameState\l16: ObjectIs\l17: DeoptimizeIf\l18: CheckMaps\l21: Load\l22: ConvertJSPrimitiveToUntagged\l23: Comparison\l24: Branch\l", ion_loop_header=true];
+B0 -> B1;
+B9 -> B1;
+B2 [label="B2 [BLOCK]\l26: Load\l27: Comparison\l28: DeoptimizeIf\l29: Change\l30: Load\l32: ConvertJSPrimitiveToUntagged\l33: Constant\l34: WordBinop\l35: Branch\l"];
+B1 -> B2;
+B3 [label="B3 [BLOCK]\l37: Constant\l38: Constant\l39: Comparison\l40: Branch\l"];
+B2 -> B3;
+B4 [label="B4 [BLOCK]\l42: Comparison\l43: Branch\l"];
+B3 -> B4;
+B5 [label="B5 [BLOCK]\l45: Constant\l46: Comparison\l47: Branch\l"];
+B4 -> B5;
+B6 [label="B6 [BLOCK]\l49: WordBinopDeoptOnOverflow\l52: Goto\l"];
+B5 -> B6;
+B7 [label="B7 [BLOCK]\l53: Constant\l54: WordBinop\l55: Goto\l"];
+B5 -> B7;
+B8 [label="B8 [BLOCK]\l56: WordBinopDeoptOnOverflow\l59: Goto\l"];
+B3 -> B8;
+B9 [label="B9 [MERGE]\l60: Phi\l61: WordBinop\l62: FrameState\l65: FrameState\l67: JSStackCheck\l68: Goto\l"];
+B6 -> B9;
+B7 -> B9;
+B8 -> B9;
+B10 [label="B10 [BLOCK]\l69: ConvertUntaggedToJSPrimitive\l70: Return\l"];
+B1 -> B10;
+B11 [label="B11 [BLOCK]\l71: FrameState\l74: Deoptimize\l"];
+B2 -> B11;
+B12 [label="B12 [BLOCK]\l75: FrameState\l78: Deoptimize\l"];
+B4 -> B12;
+}

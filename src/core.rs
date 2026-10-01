@@ -119,6 +119,10 @@ pub enum Orientation {
 /// swapped going in, all geometry is mapped back coming out), so ports land
 /// on the sides for horizontal flow and invariants hold in render space.
 pub fn layout_oriented(nodes_in: &[NodeSpec], edges_in: &[(usize, usize)], orient: Orientation) -> LayoutResult {
+    layout_oriented_with_config(nodes_in, edges_in, orient, CFG)
+}
+
+pub fn layout_oriented_with_config(nodes_in: &[NodeSpec], edges_in: &[(usize, usize)], orient: Orientation, cfg: Config) -> LayoutResult {
     use Orientation::*;
     let transpose = matches!(orient, LeftToRight | RightToLeft);
     let mirror = matches!(orient, BottomToTop | RightToLeft);
@@ -131,7 +135,7 @@ pub fn layout_oriented(nodes_in: &[NodeSpec], edges_in: &[(usize, usize)], orien
         nodes_in
     };
 
-    let mut r = layout(nodes, edges_in);
+    let mut r = layout_with_config(nodes, edges_in, cfg);
 
     if transpose {
         for p in &mut r.positions {
@@ -236,11 +240,14 @@ struct EdgeRec {
 }
 
 pub fn layout(nodes_in: &[NodeSpec], edges_in: &[(usize, usize)]) -> LayoutResult {
+    layout_with_config(nodes_in, edges_in, CFG)
+}
+
+pub fn layout_with_config(nodes_in: &[NodeSpec], edges_in: &[(usize, usize)], cfg: Config) -> LayoutResult {
     let node_count = nodes_in.len();
     if node_count == 0 {
         return LayoutResult { routes: vec![Route::default(); edges_in.len()], ..Default::default() };
     }
-    let cfg = CFG;
 
     let has_ion_metadata = nodes_in.iter().any(|n| n.loop_depth != 0 || n.loop_header || n.backedge);
 
@@ -475,8 +482,7 @@ pub fn layout(nodes_in: &[NodeSpec], edges_in: &[(usize, usize)]) -> LayoutResul
     }
     // Anything unreachable from the roots (possible in degraded inputs)
     // still needs a layer.
-    loop {
-        let Some(next) = (0..total_count).find(|&b| blocks[b].layer < 0 && !blocks[b].is_backedge) else { break };
+    while let Some(next) = (0..total_count).find(|&b| blocks[b].layer < 0 && !blocks[b].is_backedge) {
         find_loops(&mut blocks, next);
         assign_layers(&mut blocks, next);
     }
@@ -1173,7 +1179,7 @@ fn straighten_edges(lnodes: &mut Vec<LNode>, layers: &mut [Vec<usize>], blocks: 
                     deltas.push(input_x(&lnodes[dst], cfg) - output_x(&lnodes[n], port, cfg));
                 }
 
-                if deltas.iter().any(|&d| d == 0.0) {
+                if deltas.contains(&0.0) {
                     continue;
                 }
                 let mut deltas: Vec<f64> = deltas.into_iter().filter(|&d| d > 0.0).collect();
@@ -1657,12 +1663,12 @@ fn loop_header_route(back: &LNode, header: &LNode, lnodes: &[LNode], cfg: &Confi
 /// Orthogonal polyline accumulator. Push corner points (each move must share
 /// an axis with the previous point); `beziers()` converts the polyline into
 /// cubic bezier control points with rounded corners.
-struct Ortho {
+pub(crate) struct Ortho {
     pts: Vec<IonPoint>,
 }
 
 impl Ortho {
-    fn start(x: f64, y: f64) -> Self {
+    pub(crate) fn start(x: f64, y: f64) -> Self {
         Ortho { pts: vec![IonPoint { x, y }] }
     }
 
@@ -1670,16 +1676,25 @@ impl Ortho {
         self.pts.last().expect("Ortho always has a start point")
     }
 
-    fn to(&mut self, x: f64, y: f64) {
+    pub(crate) fn to(&mut self, x: f64, y: f64) {
         let last = *self.last();
         if (last.x - x).abs() < 1e-9 && (last.y - y).abs() < 1e-9 {
             return;
         }
-        // Merge collinear continuations so corner rounding sees clean turns.
-        if self.pts.len() >= 2 {
+        // Remove redundant collinear vertices, including reversals. An
+        // escape point followed by an attachment can otherwise overshoot
+        // and retrace the same segment before corner rounding.
+        while self.pts.len() >= 2 {
+            let last = *self.last();
             let prev = self.pts[self.pts.len() - 2];
-            if seg_dir(prev, last) == seg_dir(last, IonPoint { x, y }) {
-                self.pts.pop();
+            let vertical = (prev.x - last.x).abs() < 1e-9 && (last.x - x).abs() < 1e-9;
+            let horizontal = (prev.y - last.y).abs() < 1e-9 && (last.y - y).abs() < 1e-9;
+            if !vertical && !horizontal {
+                break;
+            }
+            self.pts.pop();
+            if (prev.x - x).abs() < 1e-9 && (prev.y - y).abs() < 1e-9 {
+                return;
             }
         }
         self.pts.push(IonPoint { x, y });
@@ -1687,7 +1702,7 @@ impl Ortho {
 
     /// Cubic bezier control points (3k+1) tracing the polyline with corners
     /// rounded at up to `radius` (clamped to half of each adjacent segment).
-    fn beziers(&self, radius: f64) -> Vec<IonPoint> {
+    pub(crate) fn beziers(&self, radius: f64) -> Vec<IonPoint> {
         const K: f64 = 0.5522847498307936;
         let pts = &self.pts;
         if pts.len() < 2 {

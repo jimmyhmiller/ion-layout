@@ -6,7 +6,7 @@ wrapped in a frontend that makes **arbitrary directed graphs** valid input.
 The port is verified byte-exact against the original — see
 [VERIFICATION.md](./VERIFICATION.md).
 
-Everything lives in `src/core.rs`. The pipeline:
+The original layout pipeline lives in `src/core.rs`:
 
 ```
 frontend:  classify edges → infer/repair loop metadata → build blocks
@@ -162,18 +162,26 @@ buffer (`ion_layout_free_points` releases it). The plugin registers the
 `ion` engine, measures labels via `common_init_node`/`gv_nodesize`, runs the
 layout, and writes positions/splines back. Hard-won integration notes:
 
-- `graph_init()` must be called and the libgvc global `State` must be set to
-  `GVSPLINES`, or xdot-based outputs (`-Tjson`, `-Txdot`) segfault inside
-  `agxset`.
+- libgvc calls `graph_init()` before the engine callback and
+  `graph_cleanup()` after its cleanup callback. The engine must not repeat
+  either call: duplicate initialization leaks state, and duplicate cleanup
+  invalidates libgvc's graph record. The engine does advance global `State`
+  to `GVSPLINES` before postprocessing and xdot rendering.
 - When the layout **widens** a node (to fit its output ports), setting
   `ND_width` is not enough — renderers draw the shape **polygon** built at
   init time. The plugin re-runs the shape's `freefn`/`initfn` after setting
   the new size (`poly_init` sizes boxes from `ND_width` directly; the
   width/height *attributes* are only consulted for `regular` shapes). Never
   call `gv_cleanup_node` mid-layout — it deletes the node's data record.
-- Edge labels park beside the route midpoint and stagger when they collide
-  (merged parallel edges share midpoints); the graph bounding box grows to
-  cover them.
+- `clip_and_install` clips the untrimmed route to the actual node or port
+  shape and then clips arrows using their real size/direction. Core arrow
+  insets are replaced by interior aiming points before native clipping.
+- Edge labels are placed after routing, checked against nodes, all curves,
+  arrows, cluster labels and previously placed edge labels. Recursive Bezier
+  hull subdivision prevents curve collisions slipping between fixed samples.
+  Graph bounds grow on all four sides.
+- libgvc postprocessing translates the entire drawing, including splines,
+  edge labels and cluster boxes; no second manual coordinate shift is applied.
 - `rankdir` LR/BT/RL run the layout in transposed/mirrored space (node sizes
   swapped going in, all geometry mapped back coming out), so ports land on
   node sides for horizontal flow.
@@ -185,3 +193,37 @@ original lets ports overflow narrow nodes — a route can then *start inside a
 neighboring node*. Here, port spacing compresses to fit the node (never
 below 24pt), and nodes too narrow even for that get widened. Real ion blocks
 are wide; this never triggers on them (verified — see the parity oracle).
+
+
+## 8. Graphviz constraint adapter (`src/compat.rs`, `plugin/compat.c`)
+
+The default node geometry stays on the upstream pipeline. Explicit rank or
+cluster constraints add a placement pass before routing:
+
+1. Merge overlapping rank sets with union-find. Form a directed ranking
+   graph using only constrained edges, break ranking cycles, enforce minimum
+   edge lengths and min/source/max/sink priorities, then solve longest paths.
+   Ignored edges cannot influence which constrained edges become feedback.
+2. Place ranks with the requested minimum spacing; `equally` uses a uniform
+   center step even when node heights differ. Preserve Ion's preferred
+   perpendicular coordinates and node ordering where constraints allow it.
+3. Give each cluster a perpendicular interval; recursively pack children
+   without interleaving siblings. Reserve nested borders and label space.
+   Register the resulting hierarchy with Graphviz so all renderers draw the
+   boxes and labels normally.
+4. Discard routes invalidated by changed geometry. Use a rectilinear visibility
+   grid with A* and a bend penalty to connect shape/port escape points, while
+   feedback edges retain outside loop channels. Start in a local obstacle
+   viewport and expand only when needed. Every segment is checked against
+   obstacles; there is no route-through-nodes fallback. Corner rounding is
+   limited by certified obstacle clearance.
+5. Reuse existing Ion trunks when only automatic input slots change; rebuild
+   the final approach. Parallel and incoming edges get separate automatic
+   attachment slots. Explicitly shared named ports retain a shared endpoint.
+6. Resolve compass/record/HTML ports using Graphviz's own shape callbacks.
+   Compound edges trim against the requested cluster boxes before native
+   arrow installation. Place labels and let libgvc postprocess the drawing.
+
+Node lookup uses an engine-specific cgraph record, giving O(1) endpoint
+lookup rather than an O(V) scan per edge. The adapter supports the Graphviz
+13.x internal ABI and detects the installed plugin ABI at build time.

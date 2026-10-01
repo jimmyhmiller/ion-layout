@@ -1,4 +1,4 @@
-> This is experimental software. It probably doesn't work.
+> Experimental Ion-style layout engine with tested Graphviz compatibility.
 
 # Ion Graphviz Layout Plugin
 
@@ -21,6 +21,13 @@ coordinates and explicit edge splines back into Graphviz. All output formats
 work, including `-Tsvg`, `-Tpng`, `-Tjson`, `-Txdot`, `-Tdot`, `-Tplain`.
 
 ## Usage
+
+Requires Rust (tested with 1.90 and 1.96), a C compiler, pkg-config, and Graphviz 13.x development headers
+and libraries. The build and full suite are verified with Graphviz 13.1.2 on
+macOS and Ubuntu 24.04 Linux (aarch64). The plugin uses Graphviz's internal
+shape/arrow clipping APIs, so other major versions require validation before
+being enabled. `GRAPHVIZ_PLUGIN_DIR` can override the installed plugin path.
+
 
 ```sh
 ./scripts/build.sh
@@ -56,7 +63,11 @@ src/core.rs            safe layout core, a faithful port of layout.ts:
                        classifies edges and infers loop metadata so arbitrary
                        digraphs are valid input. (pure Rust, no unsafe)
 src/lib.rs             C ABI surface (ion_layout_compute / ion_layout_free_points)
+src/compat.rs         rank constraints, hierarchical cluster placement,
+                       obstacle-aware orthogonal routing
 plugin/gvplugin_ion.c  Graphviz layout-engine glue (registers -Kion)
+plugin/compat.c        native shape/port/arrow clipping, cluster registration,
+                       compound edges and collision-aware edge labels
 include/ion_layout.h   shared C ABI header
 src/bin/ion-dump.rs    stdin/stdout layout dump for the parity oracle
 src/bin/stress.rs      perf/robustness stress (50k-node chains, 5k-node CFGs)
@@ -125,10 +136,58 @@ SpiderMonkey CFGs); all of these are covered by tests:
    original drops them).
 6. **Iterative DFS everywhere** — no stack overflow on 50k-node chains.
 
-## Known limitations / next steps
+## Graphviz compatibility
 
-- Clusters are laid out as flat nodes (no cluster boxes).
-- Edge labels are parked beside the route midpoint; long labels on busy
-  graphs may still collide with other edges.
-- All predecessors of a node converge on a single input port (the iongraph
-  model); parallel edges overlap on their final descent.
+The engine keeps Ion's layered ordering, inferred loops and backedge channels,
+while honoring the following Graphviz features:
+
+- TB/LR/BT/RL flow; `nodesep` and `ranksep` in inches, including `equally`.
+- Subgraph `rank=same|min|source|max|sink`, edge `minlen` and
+  `constraint=false`. Rank sets take precedence when constraints conflict;
+  cycles are broken for ranking. These controls specify constraints rather
+  than reproducing dot's optimizer or exact node positions.
+- Nested cluster boxes, labels, margins and label alignment/location;
+  `clusterrank=none|global` disables cluster grouping. Cluster membership owns
+  a perpendicular interval, so sibling clusters cannot interleave.
+- `compound=true` with `lhead`/`ltail` clipping at the cluster boundary.
+- Named record and HTML ports, compass directions, dynamic ports,
+  `headclip`/`tailclip`, and shape-aware endpoint clipping.
+- `dir=forward|back|both|none`, Graphviz arrow shapes and `arrowsize`;
+  undirected and arrowless edges reach their endpoints without an arrow gap.
+- Main, head, tail and external edge labels placed clear of nodes, curves,
+  arrows, cluster labels and other edge labels. Bounds include label overflow
+  on every side. Busy graphs can require more room or more distant labels.
+- Separate automatic incoming slots and parallel routes. Explicit edges to
+  the same named port necessarily share their attachment point.
+
+The unconstrained Rust core retains upstream node-geometry parity. The
+Graphviz adapter clips actual shapes and can change routes to honor ports or
+separate incoming edges. Explicit ranks/clusters use an additional placement
+pass; feedback edges still use outside channels. The minimum separation may
+be increased to accommodate arrow compositions, tracks and nested cluster borders.
+
+This is a specialized layout engine, not a claim to implement every dot
+attribute. Dot-specific crossing minimization, network-simplex optimization,
+`group`/`ordering`, component `pack` modes, and alternative `splines` modes
+are not implemented. Ion always uses rounded orthogonal routing.
+
+## Additional verification
+
+`./scripts/check.sh` also runs `scripts/compatibility.py` (semantic checks
+against actual rendered JSON, including combinations in all orientations)
+and `scripts/lifecycle.sh` (100 layout/render/free cycles through libgvc).
+`SANITIZE=1 ./scripts/lifecycle.sh` enables AddressSanitizer and UBSan.
+On Linux, LeakSanitizer also reports retained Pango/Fontconfig allocations
+reproduced by an independent stock-dot baseline; the investigation is recorded
+in the project pad. The sanitizer check does not suppress these reports.
+
+The upstream oracle no longer depends on machine-specific paths:
+
+```sh
+IONGRAPH=/path/to/iongraph ./scripts/parity.sh
+# Optional real compiler dump:
+IONGRAPH=/path/to/iongraph IONGRAPH_MEGA=/path/to/mega-complex.json ./scripts/parity.sh
+```
+
+It uses a pinned tsx runner. Without `IONGRAPH`, it expects an existing
+checkout at `target/upstream/iongraph`.

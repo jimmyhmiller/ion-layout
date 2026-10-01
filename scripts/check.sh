@@ -14,6 +14,13 @@ cargo test --release --quiet
 
 echo "── rendered-geometry checks (dot -Kion -Tjson) ────"
 node scripts/verify.mjs
+node scripts/verify.mjs tests/compiler/*.dot
+
+echo "── Graphviz semantic compatibility ────────────────"
+python3 scripts/compatibility.py
+
+echo "── libgvc lifecycle ───────────────────────────────"
+./scripts/lifecycle.sh
 
 echo
 echo "All checks passed."

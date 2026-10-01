@@ -1,0 +1,38 @@
+name: Graphviz compatibility
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.90.0
+        with:
+          components: clippy
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Graphviz build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y cmake ninja-build bison flex libexpat1-dev libcairo2-dev libpango1.0-dev libltdl-dev pkg-config fonts-liberation
+      - name: Build the supported Graphviz release
+        run: |
+          git clone --depth 1 --branch 13.1.2 https://gitlab.com/graphviz/graphviz.git "$RUNNER_TEMP/graphviz-source"
+          cmake -S "$RUNNER_TEMP/graphviz-source" -B "$RUNNER_TEMP/graphviz-build" -G Ninja -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/graphviz" -DCMAKE_INSTALL_LIBDIR=lib -DBUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release
+          cmake --build "$RUNNER_TEMP/graphviz-build" --parallel 4
+          cmake --install "$RUNNER_TEMP/graphviz-build"
+          echo "$RUNNER_TEMP/graphviz/bin" >> "$GITHUB_PATH"
+          echo "PKG_CONFIG_PATH=$RUNNER_TEMP/graphviz/lib/pkgconfig" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$RUNNER_TEMP/graphviz/lib" >> "$GITHUB_ENV"
+      - name: Verify core, rendering, semantics and lifecycle
+        run: |
+          dot -c
+          ./scripts/check.sh
+          cargo clippy --lib -- -D warnings
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: compatibility-renderings
+          path: target/compatibility
