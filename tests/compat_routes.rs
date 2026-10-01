@@ -155,3 +155,76 @@ fn attachments_remove_retraced_escape_segments() {
         assert!(a.0*b.0+a.1*b.1 >= 0.0);
     }
 }
+
+#[test]
+fn sparse_ranks_preserve_minlen_spacing_without_allocating_empty_rows() {
+    use ion_layout::{
+        compat::{layout, EdgeConstraint, NodeConstraint, Options},
+        core::{NodeSpec, Orientation},
+    };
+    let nodes: Vec<_> = [20.0, 40.0, 30.0]
+        .into_iter()
+        .map(|height| NodeSpec {
+            width: 30.0,
+            height,
+            loop_depth: 0,
+            loop_header: false,
+            backedge: false,
+        })
+        .collect();
+    let nc = vec![
+        NodeConstraint {
+            group: usize::MAX,
+            kind: 0,
+            cluster: usize::MAX
+        };
+        3
+    ];
+    for minlen in [1, 4, u32::MAX] {
+        let ec = vec![
+            EdgeConstraint {
+                minlen,
+                constraint: 1,
+                weight: 1.0,
+                kind: 0,
+                channel: 0
+            };
+            2
+        ];
+        for equally in [0, 1] {
+            let result = layout(
+                &nodes,
+                &[(0, 1), (1, 2)],
+                Orientation::TopToBottom,
+                &nc,
+                &ec,
+                &mut [],
+                Options {
+                    nodesep: 10.0,
+                    ranksep: 10.0,
+                    ranksep_equally: equally,
+                    arrow_clearance: 0.0,
+                },
+            );
+            assert_eq!(
+                result.node_layers,
+                vec![0, minlen as usize, 2 * minlen as usize]
+            );
+            let first_step = result.positions[1].y - result.positions[0].y;
+            let second_step = result.positions[2].y - result.positions[1].y;
+            let expected_first = if equally == 1 {
+                50.0 * minlen as f64
+            } else {
+                30.0 + 10.0 * minlen as f64
+            };
+            let expected_second = if equally == 1 {
+                expected_first
+            } else {
+                35.0 + 10.0 * minlen as f64
+            };
+            assert!((first_step - expected_first).abs() < 1e-5);
+            assert!((second_step - expected_second).abs() < 1e-5);
+            assert!(result.height.is_finite());
+        }
+    }
+}

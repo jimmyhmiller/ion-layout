@@ -201,8 +201,19 @@ pub fn layout(
         }
         ranks = ids.iter().map(|&i| layers[i]).collect();
     }
-    let max_rank = *ranks.iter().max().unwrap_or(&0);
-    let mut row_h = vec![0.0f64; max_rank + 1];
+    // Store only occupied ranks. A large minlen describes empty space, not
+    // millions of rows that need allocation and repeated node scans.
+    let node_layers = ranks.clone();
+    let mut rank_values = ranks.clone();
+    rank_values.sort_unstable();
+    rank_values.dedup();
+    if rank_values.is_empty() {
+        rank_values.push(0);
+    }
+    for rank in &mut ranks {
+        *rank = rank_values.binary_search(rank).unwrap();
+    }
+    let mut row_h = vec![0.0f64; rank_values.len()];
     for (i, &r) in ranks.iter().enumerate() {
         row_h[r] = row_h[r].max(if horizontal {
             result.node_sizes[i].0
@@ -269,15 +280,21 @@ pub fn layout(
     }
     let mut row_y = vec![cfg.padding + before[0]; row_h.len()];
     let equal_gap = (1..row_h.len())
-        .map(|r| rankgap + after[r - 1] + before[r])
+        .map(|r| {
+            rankgap + if rank_values[r] == rank_values[r - 1] + 1 {
+                after[r - 1] + before[r]
+            } else {
+                after[r - 1].max(before[r])
+            }
+        })
         .fold(rankgap, f64::max);
     for r in 1..row_h.len() {
-        let spacing = if opts.ranksep_equally != 0 {
-            equal_gap
+        let distance = (rank_values[r] - rank_values[r - 1]) as f64;
+        row_y[r] = row_y[r - 1] + if opts.ranksep_equally != 0 {
+            distance * (row_h[r - 1] + equal_gap)
         } else {
-            rankgap + after[r - 1] + before[r]
+            row_h[r - 1] + distance * rankgap + after[r - 1] + before[r]
         };
-        row_y[r] = row_y[r - 1] + row_h[r - 1] + spacing;
     }
     let mut cross = vec![0.0; count];
     if clusters.is_empty() {
@@ -552,7 +569,7 @@ pub fn layout(
             }
         }
     }
-    result.node_layers = ranks;
+    result.node_layers = node_layers;
     // Geometry changed; stale splines must never escape to the renderer.
     result
         .routes
