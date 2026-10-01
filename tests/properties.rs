@@ -220,11 +220,11 @@ fn random_dag(seed: u64, node_count: usize) -> G {
             has_pred[succ] = true;
         }
     }
-    for i in 1..node_count {
-        if !has_pred[i] {
+    for (i, has_predecessor) in has_pred.iter_mut().enumerate().skip(1) {
+        if !*has_predecessor {
             let pred = rng.int(0, i - 1);
             g.edge(pred, i);
-            has_pred[i] = true;
+            *has_predecessor = true;
         }
     }
     g
@@ -357,12 +357,12 @@ fn check_positive_coordinates(g: &G, r: &LayoutResult) {
 fn check_same_layer_same_top(g: &G, r: &LayoutResult) {
     let boxes = node_boxes(g, r);
     let mut top_by_layer: std::collections::HashMap<usize, f64> = std::collections::HashMap::new();
-    for i in 0..boxes.len() {
+    for (i, node_box) in boxes.iter().enumerate() {
         if g.nodes[i].backedge {
             continue; // backedge nodes sit at header layer but keep their own height
         }
         let layer = r.node_layers[i];
-        let top = boxes[i].top;
+        let top = node_box.top;
         if let Some(&existing) = top_by_layer.get(&layer) {
             assert!(
                 (existing - top).abs() < 0.01,
@@ -377,8 +377,8 @@ fn check_same_layer_same_top(g: &G, r: &LayoutResult) {
 fn check_layer_y_ordering(g: &G, r: &LayoutResult) {
     let boxes = node_boxes(g, r);
     let mut top_by_layer: std::collections::HashMap<usize, f64> = std::collections::HashMap::new();
-    for i in 0..boxes.len() {
-        top_by_layer.entry(r.node_layers[i]).or_insert(boxes[i].top);
+    for (i, node_box) in boxes.iter().enumerate() {
+        top_by_layer.entry(r.node_layers[i]).or_insert(node_box.top);
     }
     let mut layers: Vec<(usize, f64)> = top_by_layer.into_iter().collect();
     layers.sort_by_key(|&(l, _)| l);
