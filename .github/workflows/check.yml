@@ -20,7 +20,7 @@ jobs:
       - name: Build the supported Graphviz release
         run: |
           git clone --depth 1 --branch 13.1.2 https://gitlab.com/graphviz/graphviz.git "$RUNNER_TEMP/graphviz-source"
-          cmake -S "$RUNNER_TEMP/graphviz-source" -B "$RUNNER_TEMP/graphviz-build" -G Ninja -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/graphviz" -DCMAKE_INSTALL_LIBDIR=lib -DBUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release
+          cmake -S "$RUNNER_TEMP/graphviz-source" -B "$RUNNER_TEMP/graphviz-build" -G Ninja -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/graphviz" -DCMAKE_INSTALL_LIBDIR=lib -DBUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release -DENABLE_SWIG=OFF
           cmake --build "$RUNNER_TEMP/graphviz-build" --parallel 4
           cmake --install "$RUNNER_TEMP/graphviz-build"
           echo "$RUNNER_TEMP/graphviz/bin" >> "$GITHUB_PATH"
